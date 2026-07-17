@@ -58,8 +58,8 @@ func parseRequestLine(s []byte) (*RequestLine, int, error) {
 
 	httpParts := bytes.Split(parts[2], []byte("/"))
 	if len(httpParts) != 2 ||
-		bytes.Compare(httpParts[0], []byte("HTTP")) != 0 ||
-		bytes.Compare(httpParts[1], []byte("1.1")) != 0 {
+		!bytes.Equal(httpParts[0], []byte("HTTP")) ||
+		!bytes.Equal(httpParts[1], []byte("1.1")) {
 		return nil, 0, ErrMalformedRequestLine
 	}
 
@@ -79,6 +79,8 @@ outer:
 	for {
 		currentData := data[read:]
 		switch r.State {
+		case StateError:
+			return 0, fmt.Errorf("request in error state")
 		case StateInit:
 			rl, n, err := parseRequestLine(currentData)
 			if err != nil {
@@ -110,7 +112,10 @@ outer:
 
 		case StateDone:
 			break outer
+		default:
+			panic("something wrong :(")
 		}
+
 	}
 	return read, nil
 }
