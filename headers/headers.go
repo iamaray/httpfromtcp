@@ -1,4 +1,4 @@
-package header
+package headers
 
 import (
 	"bytes"
@@ -25,24 +25,28 @@ func isToken(str []byte) bool {
 	return true
 }
 
-type Headers map[string]string
-
-func (h Headers) Get(name string) string {
-	return h[strings.ToLower(name)]
+type Headers struct {
+	headers map[string]string
 }
 
-func (h Headers) Set(name, value string) {
+func (h *Headers) Get(name string) string {
+	return h.headers[strings.ToLower(name)]
+}
+
+func (h *Headers) Set(name, value string) {
 	name = strings.ToLower(name)
 
-	if v, ok := h[name]; ok {
-		h[name] = fmt.Sprintf("%s,%s", v, value)
+	if v, ok := h.headers[name]; ok {
+		h.headers[name] = fmt.Sprintf("%s,%s", v, value)
 	} else {
-		h[name] = value
+		h.headers[name] = value
 	}
 }
 
-func NewHeaders() Headers {
-	return map[string]string{}
+func NewHeaders() *Headers {
+	return &Headers{
+		headers: map[string]string{},
+	}
 }
 
 const RN string = "\r\n"
@@ -62,7 +66,7 @@ func parseHeader(fieldLine []byte) (string, string, error) {
 	return string(name), string(value), nil
 }
 
-func (h Headers) Parse(data []byte) (int, bool, error) {
+func (h *Headers) Parse(data []byte) (int, bool, error) {
 	done := false
 	read := 0
 
@@ -78,7 +82,6 @@ func (h Headers) Parse(data []byte) (int, bool, error) {
 			read += len(RN)
 			break
 		}
-		// fmt.Printf("header: \"%s\"\n", string(data[read:idx]))
 		name, value, err := parseHeader(data[read : read+idx])
 		if err != nil {
 			return 0, false, err

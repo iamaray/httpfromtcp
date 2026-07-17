@@ -1,9 +1,19 @@
 package request
 
 import (
+	"bytes"
 	"fmt"
+	"httpfromtcp/headers"
 	"io"
-	"strings"
+)
+
+type parserState string
+
+const (
+	StateInit    parserState = "init"
+	StateHeaders parserState = "headers"
+	StateDone    parserState = "done"
+	StateError   parserState = "error"
 )
 
 type RequestLine struct {
@@ -11,22 +21,17 @@ type RequestLine struct {
 	RequestTarget string
 	Method        string
 }
-type parserState string
-
-const (
-	StateInit  parserState = "init"
-	StateDone  parserState = "done"
-	StateError parserState = "error"
-)
 
 type Request struct {
 	RequestLine RequestLine
-	state       parserState
+	Headers     *headers.Headers
+	State       parserState
 }
 
 func newRequest() *Request {
 	return &Request{
-		state: StateInit,
+		State:   StateInit,
+		Headers: headers.NewHeaders(),
 	}
 }
 
@@ -37,8 +42,8 @@ var ErrWrongHttpVersion = fmt.Errorf("HTTP version not supported")
 
 const SEPARATOR = "\r\n"
 
-func parseRequestLine(s string) (*RequestLine, int, error) {
-	idx := strings.Index(s, SEPARATOR)
+func parseRequestLine(s []byte) (*RequestLine, int, error) {
+	idx := bytes.Index(s, []byte(SEPARATOR))
 	if idx == -1 {
 		return nil, 0, nil
 	}
@@ -46,20 +51,22 @@ func parseRequestLine(s string) (*RequestLine, int, error) {
 	startLine := s[:idx]
 	read := idx + len(SEPARATOR)
 
-	parts := strings.Split(startLine, " ")
+	parts := bytes.Split(startLine, []byte(" "))
 	if len(parts) != 3 {
 		return nil, 0, ErrMalformedStartLine
 	}
 
-	httpParts := strings.Split(parts[2], "/")
-	if len(httpParts) != 2 || httpParts[0] != "HTTP" || httpParts[1] != "1.1" {
+	httpParts := bytes.Split(parts[2], []byte("/"))
+	if len(httpParts) != 2 ||
+		bytes.Compare(httpParts[0], []byte("HTTP")) != 0 ||
+		bytes.Compare(httpParts[1], []byte("1.1")) != 0 {
 		return nil, 0, ErrMalformedRequestLine
 	}
 
 	rl := &RequestLine{
-		Method:        parts[0],
-		RequestTarget: parts[1],
-		HttpVersion:   httpParts[1],
+		Method:        string(parts[0]),
+		RequestTarget: string(parts[1]),
+		HttpVersion:   string(httpParts[1]),
 	}
 
 	return rl, read, nil
@@ -70,11 +77,12 @@ func (r *Request) parse(data []byte) (int, error) {
 
 outer:
 	for {
-		switch r.state {
+		currentData := data[read:]
+		switch r.State {
 		case StateInit:
-			rl, n, err := parseRequestLine(string(data[read:]))
+			rl, n, err := parseRequestLine(currentData)
 			if err != nil {
-				r.state = StateError
+				r.State = StateError
 				return 0, err
 			}
 			if n == 0 {
@@ -82,7 +90,24 @@ outer:
 			}
 			r.RequestLine = *rl
 			read += n
-			r.state = StateDone
+			r.State = StateHeaders
+
+		case StateHeaders:
+			headersMap := headers.NewHeaders()
+			n, done, err := headersMap.Parse(currentData)
+			if err != nil {
+				r.State = StateError
+				return 0, err
+			}
+			if n == 0 {
+				break outer
+			}
+			r.Headers = headersMap
+			read += n
+			if done {
+				r.State = StateDone
+			}
+
 		case StateDone:
 			break outer
 		}
@@ -91,7 +116,7 @@ outer:
 }
 
 func (r *Request) done() bool {
-	return r.state == StateDone || r.state == StateError
+	return r.State == StateDone || r.State == StateError
 }
 
 func RequestFromHeader(reader io.Reader) (*Request, error) {
