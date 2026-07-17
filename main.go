@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"httpfromtcp/request"
-	"io"
 	"log"
 	"net"
 )
