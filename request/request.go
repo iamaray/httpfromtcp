@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"httpfromtcp/headers"
 	"io"
+	"strconv"
 )
 
 type parserState string
@@ -12,6 +13,7 @@ type parserState string
 const (
 	StateInit    parserState = "init"
 	StateHeaders parserState = "headers"
+	StateBody    parserState = "body"
 	StateDone    parserState = "done"
 	StateError   parserState = "error"
 )
@@ -23,15 +25,29 @@ type RequestLine struct {
 }
 
 type Request struct {
+	State       parserState
 	RequestLine RequestLine
 	Headers     *headers.Headers
-	State       parserState
+	Body        string
+}
+
+func getInt(headers headers.Headers, name string, defaultValue int) int {
+	val, exists := headers.Get(name)
+	if !exists {
+		return defaultValue
+	}
+	valInt, err := strconv.Atoi(val)
+	if err != nil {
+		return defaultValue
+	}
+	return valInt
 }
 
 func newRequest() *Request {
 	return &Request{
 		State:   StateInit,
 		Headers: headers.NewHeaders(),
+		Body:    "",
 	}
 }
 
@@ -107,6 +123,19 @@ outer:
 			r.Headers = headersMap
 			read += n
 			if done {
+				r.State = StateBody
+			}
+
+		case StateBody:
+			length := getInt(*r.Headers, "content-length", 0)
+			if length == 0 {
+				r.State = StateDone
+				break outer
+			}
+			remaining := min(length-len(r.Body), len(currentData))
+			r.Body += string(currentData)[:remaining]
+			read += remaining
+			if len(r.Body) == length {
 				r.State = StateDone
 			}
 
