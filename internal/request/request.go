@@ -3,7 +3,7 @@ package request
 import (
 	"bytes"
 	"fmt"
-	"httpfromtcp/headers"
+	"httpfromtcp/internal/headers"
 	"io"
 	"strconv"
 )
